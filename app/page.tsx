@@ -1,101 +1,244 @@
-import Image from "next/image";
+"use client";
+import PlayButtons from "@/components/PlayButtons/PlayButtons";
+import { Volume, Volume1, Volume2, VolumeX } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import jsmediatags from 'jsmediatags';
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volumeLevel, setVolumeLevel] = useState(0);
+  const [volumeControl, setVolumeControl] = useState(60);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const [songTitle, setSongTitle] = useState("Track Title"); 
+  const [artistName, setArtistName] = useState("Artist Name"); 
+  const [albumCover, setAlbumCover] = useState("https://upload.wikimedia.org/wikipedia/en/thumb/1/14/Inrainbowscover.png/220px-Inrainbowscover.png"); 
+
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  const formatTime = (time: number): string => {
+    const minutes = Math.floor(time / 60);
+    const seconds = Math.floor(time % 60);
+    return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
+  };
+
+  useEffect(() => {
+    const audio = audioRef.current;
+
+    if (audio && !audioContextRef.current) {
+      const audioContext = new AudioContext();
+      const analyser = audioContext.createAnalyser();
+      const gainNode = audioContext.createGain();
+      const source = audioContext.createMediaElementSource(audio);
+
+      source.connect(gainNode);
+      gainNode.connect(analyser);
+      analyser.connect(audioContext.destination);
+
+      analyser.fftSize = 256;
+      audioContextRef.current = audioContext;
+      analyserRef.current = analyser;
+      gainNodeRef.current = gainNode;
+    }
+
+    const updateProgress = () => {
+      if (audio) {
+        setCurrentTime(audio.currentTime);
+        setProgress((audio.currentTime / audio.duration) * 100 || 0);
+      }
+    };
+
+    const setAudioDuration = () => {
+      if (audio) {
+        setDuration(audio.duration || 0);
+      }
+    };
+
+    audio?.addEventListener("timeupdate", updateProgress);
+    audio?.addEventListener("loadedmetadata", setAudioDuration);
+
+    return () => {
+      audio?.removeEventListener("timeupdate", updateProgress);
+      audio?.removeEventListener("loadedmetadata", setAudioDuration);
+    };
+  }, []);
+
+  useEffect(() => {
+    const analyser = analyserRef.current;
+    const dataArray = new Uint8Array(analyser?.frequencyBinCount || 0);
+
+    const updateVolume = () => {
+      if (analyser) {
+        analyser.getByteFrequencyData(dataArray);
+        const volume =
+          dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
+        setVolumeLevel(volume);
+      }
+
+      requestAnimationFrame(updateVolume);
+    };
+
+    if (analyser) {
+      updateVolume();
+    }
+  }, []);
+
+  const handlePlayPause = () => {
+    const audio = audioRef.current;
+
+    if (isPlaying) {
+      audio?.pause();
+    } else {
+      audio?.play();
+      audioContextRef.current?.resume();
+    }
+
+    setIsPlaying(!isPlaying);
+  };
+
+  const handleSkipBack = () => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.currentTime = Math.max(audio.currentTime - 10, 0);
+    }
+  };
+
+  const handleStepForward = () => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.currentTime = Math.min(audio.currentTime + 10, audio.duration);
+    }
+  };
+
+  const handleRangeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const audio = audioRef.current;
+    const newProgress = parseFloat(e.target.value);
+    if (audio) {
+      const newTime = (newProgress / 100) * audio.duration;
+      audio.currentTime = newTime;
+      setProgress(newProgress);
+    }
+  };
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newVolume = parseFloat(e.target.value) / 100;
+    setVolumeControl(newVolume * 100);
+
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = newVolume;
+    }
+  };
+
+  const extractMetadata = (audioUrl: string) => {
+    fetch(audioUrl)
+      .then((response) => response.blob())
+      .then((blob) => {
+        jsmediatags.read(blob, {
+          onSuccess: (tag) => {
+            const { title, artist, picture } = tag.tags;
+            const image = picture ? `data:${picture.format};base64,${picture.data}` : "";
+
+            console.log(image)
+  
+            setSongTitle(title || 'Unknown Title');
+            setArtistName(artist || 'Unknown Artist');
+            setAlbumCover(image || "https://upload.wikimedia.org/wikipedia/en/thumb/1/14/Inrainbowscover.png/220px-Inrainbowscover.png");
+          },
+          onError: (error) => {
+            console.error("Error reading metadata", error);
+          }
+        });
+      })
+      .catch((error) => {
+        console.error("Error fetching audio", error);
+      });
+  };
+
+  extractMetadata('audio.mp3');
+
+  return (
+    <div className="flex min-h-screen overflow-hidden bg-gray-900">
+      <div className="relative border-r w-[70%] flex items-end bg-fondo bg-cover bg-center">
+        <div className="absolute inset-0 bg-black/60 z-0"></div>
+        <div className="flex items-center justify-center h-10 px-8 gap-x-2 mt-4 text-white absolute -left-16 top-36 bg-black/15 -rotate-90 rounded-xl">
+          {volumeControl === 0 ? (
+            <VolumeX className="text-red-500 rotate-90" />
+          ) : volumeControl <= 33 ? (
+            <Volume className="text-white rotate-90" />
+          ) : volumeControl <= 66 ? (
+            <Volume1 className="text-white rotate-90" />
+          ) : (
+            <Volume2 className="text-white rotate-90" />
+          )}
+          <input
+            id="volume"
+            type="range"
+            min={0}
+            max={100}
+            value={volumeControl}
+            onChange={handleVolumeChange}
+            className="w-40 appearance-none h-1 rounded-xl cursor-pointer outline-none "
+          />
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+        <div className="relative h-72 w-full flex z-10">
+          <div className="h-full w-72 flex items-center justify-end">
+            <img
+              src={albumCover} // Usamos la URL de la imagen del álbum
+              alt={songTitle}
+              className="rounded-xl w-36 h-36 object-cover"
+            />
+          </div>
+          <div className="flex-1 flex flex-col justify-around px-8">
+            <div className="flex text-white justify-between items-center">
+              <div className="flex flex-col gap-y-2">
+                <h1>{songTitle}</h1> {/* Título de la canción */}
+                <h2>{artistName}</h2> {/* Nombre del artista */}
+              </div>
+
+              <PlayButtons
+                onPlayPause={handlePlayPause}
+                onSkipBack={handleSkipBack}
+                onStepForward={handleStepForward}
+                isPlaying={isPlaying}
+              />
+            </div>
+
+            <div className="flex items-center w-full">
+              <span className="text-white text-sm w-12">
+                {formatTime(currentTime)}
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={progress}
+                onChange={handleRangeChange}
+                className="w-full mx-2"
+              />
+              <span className="text-white text-sm w-12">
+                {formatTime(duration)}
+              </span>
+            </div>
+
+            <div className="w-full h-4 bg-gray-700 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-orange-700 transition-all duration-75"
+                style={{ width: `${volumeLevel}%` }}
+              ></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 bg-red-500"></div>
+
+      <audio ref={audioRef} src="audio.mp3"></audio>
     </div>
   );
 }
