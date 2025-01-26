@@ -4,7 +4,7 @@ import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { useMusic } from "@/hooks/useMusic";
 import Music from "@/components/Music/Music";
 import PlayButtons from "@/components/PlayButtons/PlayButtons";
-import { Plus, Volume, Volume1, Volume2, VolumeX } from "lucide-react";
+import { Plus, Search, Volume, Volume1, Volume2, VolumeX } from "lucide-react";
 import Modal from "@/components/Modal/Modal";
 import axios from "axios";
 
@@ -14,7 +14,9 @@ export default function Home() {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [volumeControl, setVolumeControl] = useState<number>(60);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState<string>("");
 
+  const [currentMusicStored, setCurrentMusicStored] = useState<any>(null); 
   const openModal = () => {
     setIsModalOpen(true);
   };
@@ -27,7 +29,12 @@ export default function Home() {
     setMusicList((prevList) => [...prevList, newMusic]);
   };
 
-  const currentMusic = musicList[currentMusicIndex];
+  const filteredMusicList = musicList.filter((music) =>
+    music.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    music.artist.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const currentMusic = currentMusicStored || filteredMusicList[currentMusicIndex];
 
   const {
     audioRef,
@@ -39,22 +46,24 @@ export default function Home() {
   } = useAudioPlayer(currentMusic?.music || "");
 
   useEffect(() => {
-    if (currentMusic && audioRef.current) {
+    if (audioRef.current && currentMusic) {
       const audio = audioRef.current;
-      console.log(audio)
-      console.log(currentMusic);
+  
       if (audio.src !== `http://localhost:3001/uploads/${currentMusic.music}`) {
         audio.src = `http://localhost:3001/uploads/${currentMusic.music}`;
         audio.load();
       }
+  
       audio.volume = volumeControl / 100;
-      if (isPlaying) {
+  
+      if (isPlaying && audio.paused) {
         audio.play().catch((error) => {
           console.error("Error al reproducir audio:", error);
         });
       }
+  
     }
-  }, [currentMusic, audioRef, volumeControl, isPlaying]);
+  }, [currentMusic, isPlaying, volumeControl]);
 
   const handleVolumeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = parseInt(event.target.value);
@@ -65,30 +74,35 @@ export default function Home() {
   };
 
   const handleMusicClick = (index: number) => {
+    const selectedMusic = filteredMusicList[index];
+    setCurrentMusicStored(selectedMusic); 
     setCurrentMusicIndex(index);
     setIsPlaying(true);
   };
 
   const handleAudioEnded = () => {
-    if (currentMusicIndex < musicList.length - 1) {
-      setCurrentMusicIndex(currentMusicIndex + 1);
-    } else {
-      setCurrentMusicIndex(0);
-    }
-  };
-  const handleSkipNextClick = () => {
-    if (currentMusicIndex < musicList.length - 1) {
-      setCurrentMusicIndex(currentMusicIndex + 1);
-    } else {
-      setCurrentMusicIndex(0);
-    }
+    const nextIndex = (currentMusicIndex + 1) % filteredMusicList.length;
+    setCurrentMusicIndex(nextIndex);
+    setCurrentMusicStored(filteredMusicList[nextIndex]); 
+    setIsPlaying(true);
   };
 
+  const handleSkipNextClick = () => {
+    if (filteredMusicList.length > 0) {
+      const nextIndex = (currentMusicIndex + 1) % filteredMusicList.length;
+      setCurrentMusicIndex(nextIndex);
+      setCurrentMusicStored(filteredMusicList[nextIndex]); 
+      setIsPlaying(true);
+    }
+  };
+  
   const handleSkipPrevClick = () => {
-    if (currentMusicIndex > 0) {
-      setCurrentMusicIndex(currentMusicIndex - 1);
-    } else {
-      setCurrentMusicIndex(musicList.length - 1);
+    if (filteredMusicList.length > 0) {
+      const prevIndex =
+        currentMusicIndex === 0 ? filteredMusicList.length - 1 : currentMusicIndex - 1;
+      setCurrentMusicIndex(prevIndex);
+      setCurrentMusicStored(filteredMusicList[prevIndex]); 
+      setIsPlaying(true);
     }
   };
 
@@ -138,14 +152,14 @@ export default function Home() {
       console.log("ID a eliminar:", id);
       const response = await axios.delete(`http://localhost:3001/music/${id}`);
       console.log("Respuesta del servidor:", response.data);
-  
+
       const updatedList = musicList.filter((music) => music._id !== id);
       setMusicList(updatedList);
-  
+
       if (currentMusicIndex >= updatedList.length) {
         setCurrentMusicIndex(Math.max(updatedList.length - 1, 0));
       }
-  
+
       if (updatedList.length === 0) {
         setIsPlaying(false);
         if (audioRef.current) {
@@ -161,23 +175,26 @@ export default function Home() {
       }
     }
   };
-  
-  
+
+  useEffect(() => {
+    if (filteredMusicList.length > 0 && currentMusicIndex >= filteredMusicList.length) {
+      setCurrentMusicIndex(filteredMusicList.length - 1);
+    }
+  }, [filteredMusicList, currentMusicIndex]);
 
   return (
     <div className="flex flex-row-reverse min-h-screen overflow-hidden bg-gray-900">
       <div className="relative border-r w-[71%] flex items-end bg-cover bg-center">
         {videoId && (
           <iframe
-          src={`https://www.youtube.com/embed/${videoId}?autoplay=1&loop=1&playlist=${videoId}&mute=1&modestbranding=1&controls=0&showinfo=0&rel=0&fs=0&iv_load_policy=3&cc_load_policy=0`}
-          frameBorder="0"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
-          className="absolute top-0 left-0 w-full h-full object-cover pointer-events-none"
-        ></iframe>
-        
+            src={`https://www.youtube.com/embed/${videoId}?autoplay=1&loop=1&playlist=${videoId}&mute=1&modestbranding=1&controls=0&showinfo=0&rel=0&fs=0&iv_load_policy=3&cc_load_policy=0`}
+            frameBorder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            className="absolute top-0 left-0 w-full h-full object-cover pointer-events-none"
+          ></iframe>
         )}
-        <div className="flex items-center justify-center h-10 px-8 gap-x-2 mt-4 text-white absolute -right-16 top-36 bg-black/70 -rotate-90 rounded-xl">
+        <div className="flex items-center justify-center h-10 px-8 gap-x-2 mt-4 text-white absolute -right-16 top-36 bg-black/80 -rotate-90 rounded-xl">
           {volumeControl === 0 ? (
             <VolumeX className="text-red-500 rotate-90" />
           ) : volumeControl <= 33 ? (
@@ -207,7 +224,7 @@ export default function Home() {
           </div>
 
           <div className="flex-1 flex flex-col justify-around px-8">
-            <div className="flex text-white justify-between p-4 items-center bg-gray-900/80 rounded-xl">
+            <div className="flex text-white justify-between p-4 items-center bg-gray-900/90 rounded-xl">
               <div className="flex flex-col gap-y-2">
                 <h1 className="text-xl font-gummy">
                   {currentMusic?.title || "Título de la canción"}
@@ -257,10 +274,26 @@ export default function Home() {
           <span className="hover:text-orange-600 cursor-pointer">
             <Plus strokeWidth={3} onClick={openModal} />
           </span>
-          <Modal isOpen={isModalOpen} closeModal={closeModal} updateMusicList={updateMusicList} />
+          <Modal
+            isOpen={isModalOpen}
+            closeModal={closeModal}
+            updateMusicList={updateMusicList}
+          />
         </div>
-        <div className="max-h-[calc(100vh-4rem)] overflow-y-auto flex flex-col gap-y-3 p-2">
-          {musicList.map((music, index) => (
+        <div className="flex items-center border-b p-4 h-16">
+          <div className="relative w-full">
+            <input
+              type="text"
+              className="py-2 px-4 text-black font-gummy rounded-lg outline-none w-full"
+              placeholder="Buscar"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <Search className="absolute top-2 text-orange-600 right-1" />
+          </div>
+        </div>
+        <div className="max-h-[calc(100vh-8rem)] overflow-y-auto flex flex-col gap-y-3 p-2">
+          {filteredMusicList.map((music, index) => (
             <Music
               key={music._id}
               image={music.image}
